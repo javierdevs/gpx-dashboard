@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>GPX Dashboard Avanzado</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { --dark-bg: #121212; --card-bg: #1e1e1e; --accent: #00e676; --text: #e0e0e0; }
+        body { margin: 0; font-family: 'Segoe UI', Roboto, sans-serif; display: flex; height: 100vh; background: var(--dark-bg); color: var(--text); }
+        
+        /* Sidebar */
+        #sidebar { width: 380px; display: flex; flex-direction: column; border-right: 1px solid #333; z-index: 1000; }
+        .header { padding: 20px; background: #1a1a1a; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
+        #file-list { flex-grow: 1; overflow-y: auto; padding: 15px; background: var(--dark-bg); }
+        
+        /* Sort button */
+        #sort-btn {
+            display: flex; align-items: center; gap: 6px;
+            margin-top: 10px; width: 100%; padding: 8px 12px;
+            background: #2a2a2a; color: var(--accent);
+            border: 1px solid var(--accent); border-radius: 5px;
+            cursor: pointer; font-size: 0.85em; font-family: inherit;
+            transition: background 0.2s;
+        }
+        #sort-btn:hover { background: #1a3a2a; }
+        #sort-btn .arrow { font-size: 1em; transition: transform 0.3s; }
+        #sort-btn.asc .arrow { transform: rotate(180deg); }
+
+        /* Tarjetas */
+        .track-card { background: var(--card-bg); padding: 15px; border-radius: 10px; margin-bottom: 12px; border-left: 5px solid var(--accent); transition: transform 0.2s, box-shadow 0.2s, background 0.2s; cursor: pointer; }
+        .track-card:hover { transform: translateX(5px); }
+        .track-card.selected { background: #1a2e22; box-shadow: 0 0 0 2px var(--accent); transform: translateX(5px); }
+        .track-card h4 { margin: 0 0 8px 0; font-size: 0.95em; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .grid-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8em; color: #aaa; }
+        .val { color: var(--accent); font-weight: bold; }
+
+        /* Stats Section */
+        .stats-box { background: #1a1a1a; padding: 20px; border-top: 1px solid #333; }
+        .weekly-stats { font-size: 0.85em; max-height: 200px; overflow-y: auto; margin-top: 10px; }
+        .week-entry { background: #252525; padding: 8px; margin-bottom: 5px; border-radius: 4px; border-bottom: 1px solid var(--accent); }
+
+        #map { flex-grow: 1; height: 100vh; }
+        input[type="file"] { width: 100%; margin-top: 10px; background: #333; color: white; border: none; padding: 8px; border-radius: 5px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <div class="header">
+        <h2 style="margin:0; color:var(--accent)">GPX Analyzer</h2>
+        <input type="file" id="gpx-input" multiple accept=".gpx">
+        <button id="sort-btn" title="Ordenar por fecha">
+            <span class="arrow">↓</span>
+            <span id="sort-label">Más reciente primero</span>
+        </button>
+    </div>
+    
+    <div id="file-list"></div>
+
+    <div class="stats-box">
+        <div id="general-stats" style="font-size: 1.1em; margin-bottom: 10px;">Total: <span class="val" id="global-km">0</span> km</div>
+        <div style="font-weight: bold; border-bottom: 1px solid #444; padding-bottom: 5px;">Estadísticas Mensuales / Semanales</div>
+        <div id="weekly-list" class="weekly-stats"></div>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-gpx/1.7.0/gpx.min.js"></script>
+
+<script>
+    const map = L.map('map').setView([0, 0], 2);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '© OpenStreetMap © CARTO',
+        subdomains: 'abcd',
+        maxZoom: 19
+    }).addTo(map);
+
+    let totalGlobalDist = 0;
+    // statsData structure: { "YYYY-MM": { label, weekStart, weekEnd, dist } }
+    const statsData = {};
+
+    // Track cards data for sorting: [{ date: Date, element: HTMLElement, layer, color }]
+    let trackCards = [];
+    let sortDescending = true; // true = más reciente primero
+    let selectedCard = null;   // currently selected track card entry
+
+    /* ── Week helpers ──────────────────────────────────────────── */
+
+    /** Returns the Monday of the ISO week containing `date` */
+    function getISOMonday(date) {
+        const d = new Date(date);
+        d.setHours(0, 0, 0, 0);
+        const day = d.getDay(); // 0=Sun
+        const diff = (day === 0) ? -6 : 1 - day;
+        d.setDate(d.getDate() + diff);
+        return d;
+    }
+
+    /** ISO week number (1-53) */
+    function getISOWeek(date) {
+        const d = new Date(date);
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+        const week1 = new Date(d.getFullYear(), 0, 4);
+        return 1 + Math.round(((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+    }
+
+    function getWeekInfo(date) {
+        const monday = getISOMonday(date);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+
+        const opts = { day: '2-digit', month: 'short' };
+        const isoWeek = getISOWeek(monday);
+
+        // Key: year + ISO week number so weeks never bleed across months
+        const year = monday.getFullYear();
+        const weekKey = `${year}-W${String(isoWeek).padStart(2, '0')}`;
+
+        const monthLabel = monday.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase();
+        const rangeLabel = `Semana ${isoWeek} · ${monday.toLocaleDateString('es-ES', opts)} – ${sunday.toLocaleDateString('es-ES', opts)}`;
+
+        return { weekKey, monthLabel, rangeLabel, monday, sunday };
+    }
+
+    /* ── File input ────────────────────────────────────────────── */
+
+    document.getElementById('gpx-input').addEventListener('change', function(e) {
+        const files = e.target.files;
+        
+        for (let file of files) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const color = "#" + ((1 << 24) * Math.random() | 0).toString(16).padStart(6, "0");
+
+                new L.GPX(event.target.result, {
+                    async: true,
+                    marker_options: { startIconUrl: null, endIconUrl: null, shadowUrl: null },
+                    polyline_options: { color: color, weight: 4, opacity: 0.8 }
+                }).on('loaded', function(ev) {
+                    const g = ev.target;
+                    const distKm = g.get_distance() / 1000;
+                    const durationMs = g.get_moving_time();
+                    const speedKmh = durationMs > 0 ? (distKm / (durationMs / 3600000)) : 0;
+                    
+                    const start = g.get_start_time();
+                    const end   = g.get_end_time();
+
+                    // Accumulate global distance
+                    totalGlobalDist += distKm;
+                    document.getElementById('global-km').innerText = totalGlobalDist.toFixed(2);
+
+                    // Weekly stats
+                    if (start) {
+                        const info = getWeekInfo(start);
+
+                        if (!statsData[info.weekKey]) {
+                            statsData[info.weekKey] = {
+                                monthLabel: info.monthLabel,
+                                rangeLabel: info.rangeLabel,
+                                monday: info.monday,
+                                dist: 0
+                            };
+                        }
+                        statsData[info.weekKey].dist += distKm;
+                        updateStatsUI();
+                    }
+
+                    // Build card element
+                    const card = document.createElement('div');
+                    card.className = 'track-card';
+                    card.style.borderLeftColor = color;
+                    card.dataset.timestamp = start ? start.getTime() : 0;
+                    card.innerHTML = `
+                        <h4>${file.name}</h4>
+                        <div class="grid-meta">
+                            <div>Fecha: <span class="val">${start ? start.toLocaleDateString() : 'N/A'}</span></div>
+                            <div>Dist: <span class="val">${distKm.toFixed(2)} km</span></div>
+                            <div>Inicio: <span class="val">${start ? start.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--'}</span></div>
+                            <div>Fin: <span class="val">${end ? end.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--'}</span></div>
+                            <div style="grid-column: span 2">Vel. Media: <span class="val">${speedKmh.toFixed(2)} km/h</span></div>
+                        </div>
+                    `;
+
+                    const entry = { date: start ? start.getTime() : 0, element: card, layer: g, color };
+                    trackCards.push(entry);
+
+                    // Click to highlight on map
+                    card.addEventListener('click', () => selectTrack(entry));
+
+                    renderCards();
+
+                    map.fitBounds(g.getBounds());
+                }).addTo(map);
+            };
+            reader.readAsText(file);
+        }
+    });
+
+    /* ── Track selection & highlight ──────────────────────────── */
+
+    function selectTrack(entry) {
+        // Deselect previous
+        if (selectedCard) {
+            selectedCard.element.classList.remove('selected');
+            // Restore all tracks to normal opacity/weight
+            trackCards.forEach(t => {
+                t.layer.getLayers().forEach(l => {
+                    if (l.setStyle) l.setStyle({ opacity: 0.8, weight: 4 });
+                    else if (l.setOpacity) l.setOpacity(0.8);
+                });
+            });
+        }
+
+        // Clicking the same card again deselects
+        if (selectedCard === entry) {
+            selectedCard = null;
+            return;
+        }
+
+        selectedCard = entry;
+        entry.element.classList.add('selected');
+
+        // Dim all other tracks
+        trackCards.forEach(t => {
+            const isSelected = t === entry;
+            t.layer.getLayers().forEach(l => {
+                if (l.setStyle) l.setStyle({
+                    opacity: isSelected ? 1 : 0.15,
+                    weight: isSelected ? 6 : 3
+                });
+                else if (l.setOpacity) l.setOpacity(isSelected ? 1 : 0.15);
+            });
+        });
+
+        // Bring selected to front and fit bounds
+        entry.layer.bringToFront();
+        map.fitBounds(entry.layer.getBounds(), { padding: [40, 40] });
+    }
+
+    /* ── Sorting ───────────────────────────────────────────────── */
+
+    function renderCards() {
+        const sorted = [...trackCards].sort((a, b) =>
+            sortDescending ? b.date - a.date : a.date - b.date
+        );
+        const list = document.getElementById('file-list');
+        list.innerHTML = '';
+        sorted.forEach(item => list.appendChild(item.element));
+    }
+
+    document.getElementById('sort-btn').addEventListener('click', function() {
+        sortDescending = !sortDescending;
+        this.classList.toggle('asc', !sortDescending);
+        document.getElementById('sort-label').textContent = sortDescending
+            ? 'Más reciente primero'
+            : 'Más antiguo primero';
+        renderCards();
+    });
+
+    /* ── Stats UI ──────────────────────────────────────────────── */
+
+    function updateStatsUI() {
+        const container = document.getElementById('weekly-list');
+        container.innerHTML = '';
+
+        // Sort weeks chronologically descending
+        const sortedKeys = Object.keys(statsData).sort((a, b) => b.localeCompare(a));
+
+        // Group by month for display
+        const byMonth = {};
+        for (const key of sortedKeys) {
+            const entry = statsData[key];
+            if (!byMonth[entry.monthLabel]) byMonth[entry.monthLabel] = [];
+            byMonth[entry.monthLabel].push({ key, ...entry });
+        }
+
+        for (const [month, weeks] of Object.entries(byMonth)) {
+            const mesHeader = document.createElement('div');
+            mesHeader.innerHTML = `<div style="color:var(--accent); margin-top:10px; font-weight:bold;">● ${month}</div>`;
+            container.appendChild(mesHeader);
+
+            for (const w of weeks) {
+                const semDiv = document.createElement('div');
+                semDiv.className = 'week-entry';
+                semDiv.innerHTML = `
+                    <div style="font-size:0.8em; color:#888">${w.rangeLabel}</div>
+                    <div style="font-weight:bold">${w.dist.toFixed(2)} km</div>
+                `;
+                container.appendChild(semDiv);
+            }
+        }
+    }
+</script>
+</body>
+</html>
