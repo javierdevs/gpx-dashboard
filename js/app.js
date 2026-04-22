@@ -109,7 +109,7 @@
 
     /* ── File input ────────────────────────────────────────────── */
 // ── Renderiza un GPX en el mapa y sidebar ────────────────────
-    function renderGPX(gpxText, filename, fromCloud = false) {
+    function renderGPX(gpxText, filename, fromCloud = false, storagePath = null) {
         return new Promise((resolve) => {
         const color = '#' + ((1 << 24) * Math.random() | 0).toString(16).padStart(6, '0');
 
@@ -142,6 +142,7 @@
             card.style.borderLeftColor = color;
             card.dataset.timestamp = start ? start.getTime() : 0;
             card.innerHTML = `
+                <button class="delete-btn" title="Eliminar ruta">✕</button>
                 <h4>${filename}</h4>
                 <div class="grid-meta">
                     <div>Fecha: <span class="val">${start ? start.toLocaleDateString('es-ES') : 'N/A'}</span></div>
@@ -155,6 +156,16 @@
             const entry = { date: start ? start.getTime() : 0, element: card, layer: g, color };
             trackCards.push(entry);
             card.addEventListener('click', () => selectTrack(entry));
+
+            const deleteBtn = card.querySelector('.delete-btn');
+            if (storagePath) {
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteTrack(entry, storagePath);
+                });
+            } else {
+                deleteBtn.style.display = 'none';
+            }
 
             allBounds.push(g.getBounds());
             renderCards();
@@ -187,7 +198,7 @@
             if (dbError) throw dbError;
 
             const text = await file.text();
-            await renderGPX(text, file.name, true);
+            await renderGPX(text, file.name, true, storagePath);
 
         } catch (err) {
             console.error('Error subiendo', file.name, err);
@@ -199,6 +210,27 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
     uploadFiles(e.target.files);
     this.value = '';
 });
+
+    // ── Eliminar ruta ────────────────────────────────────────────
+    async function deleteTrack(entry, storagePath) {
+        if (!confirm('¿Eliminar esta ruta?')) return;
+
+        try {
+            await db.storage.from(BUCKET).remove([storagePath]);
+
+            await db.from('gpx_tracks')
+                .delete()
+                .eq('storage_path', storagePath);
+
+            map.removeLayer(entry.layer);
+            trackCards = trackCards.filter(t => t !== entry);
+            if (selectedCard === entry) selectedCard = null;
+            renderCards();
+
+        } catch (err) {
+            console.error('Error eliminando ruta:', err);
+        }
+    }
 
     /* ── Track selection & highlight ──────────────────────────── */
 
@@ -329,7 +361,7 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
                 if (dlError) { console.warn('Error descargando', track.filename); continue; }
 
                 const text = await fileData.text();
-                await renderGPX(text, track.filename, true);
+                await renderGPX(text, track.filename, true, track.storage_path);
             }
 
             if (allBounds.length > 0) {

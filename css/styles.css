@@ -20,13 +20,17 @@
         #sort-btn.asc .arrow { transform: rotate(180deg); }
 
         /* Tarjetas */
-        .track-card { background: var(--card-bg); padding: 15px; border-radius: 10px; margin-bottom: 12px; border-left: 5px solid var(--accent); transition: transform 0.2s, box-shadow 0.2s, background 0.2s; cursor: pointer; }
+        .track-card { background: var(--card-bg); padding: 15px; border-radius: 10px; margin-bottom: 12px; border-left: 5px solid var(--accent); transition: transform 0.2s, box-shadow 0.2s, background 0.2s; cursor: pointer; position: relative; }
         .track-card:hover { transform: translateX(5px); }
         .track-card.selected { background: #1a2e22; box-shadow: 0 0 0 2px var(--accent); transform: translateX(5px); }
         .track-card h4 { margin: 0 0 8px 0; font-size: 0.95em; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .grid-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8em; color: #aaa; }
         .val { color: var(--accent); font-weight: bold; }
 
+        /* Botón eliminar */
+        .delete-btn { position: absolute; top: 10px; right: 10px; background: none; border: none; color: #555; cursor: pointer; font-size: 1em; padding: 2px 6px; border-radius: 4px; transition: color 0.2s, background 0.2s; }
+        .delete-btn:hover { color: #ff5555; background: #2a1a1a; }
+        
         /* Stats Section */
         .stats-box { background: #1a1a1a; padding: 20px; border-top: 1px solid #333; }
         .weekly-stats { font-size: 0.85em; max-height: 200px; overflow-y: auto; margin-top: 10px; }
