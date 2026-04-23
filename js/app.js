@@ -158,6 +158,12 @@
 
             const entry = { date: start ? start.getTime() : 0, element: card, layer: g, color };
             trackCards.push(entry);
+            g.on('click', function() {
+                selectTrack(entry);
+                const sidebar = document.getElementById('file-list');
+                const cardTop = entry.element.offsetTop - sidebar.offsetTop;
+                sidebar.scrollTo({ top: cardTop, behavior: 'smooth' });
+            });
             card.addEventListener('click', () => selectTrack(entry));
 
             const deleteBtn = card.querySelector('.delete-btn');
