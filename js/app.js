@@ -109,9 +109,9 @@
 
     /* ── File input ────────────────────────────────────────────── */
 // ── Renderiza un GPX en el mapa y sidebar ────────────────────
-    function renderGPX(gpxText, filename, fromCloud = false, storagePath = null) {
+    function renderGPX(gpxText, filename, fromCloud = false, storagePath = null, savedColor = null) {
         return new Promise((resolve) => {
-        const color = '#' + ((1 << 24) * Math.random() | 0).toString(16).padStart(6, '0');
+        const color = savedColor || '#' + ((1 << 24) * Math.random() | 0).toString(16).padStart(6, '0');
 
         new L.GPX(gpxText, {
             async: true,
@@ -142,6 +142,8 @@
             card.style.borderLeftColor = color;
             card.dataset.timestamp = start ? start.getTime() : 0;
             card.innerHTML = `
+                <span class="color-dot" style="background:${color}" title="Cambiar color"></span>
+                <input type="color" class="color-picker-hidden" value="${color}">
                 <button class="rename-btn" title="Renombrar ruta">✏️</button>
                 <button class="delete-btn" title="Eliminar ruta">✕</button>
                 <h4>${filename}</h4>
@@ -161,6 +163,24 @@
             const deleteBtn = card.querySelector('.delete-btn');
             const renameBtn = card.querySelector('.rename-btn');
 
+            const colorDot = card.querySelector('.color-dot');
+            const colorPicker = card.querySelector('.color-picker-hidden');
+            colorDot.addEventListener('click', () => colorPicker.click());
+            colorPicker.addEventListener('change', async function(e) {
+                const newColor = e.target.value;
+                card.style.borderLeftColor = newColor;
+                colorDot.style.background = newColor;
+                entry.layer.getLayers().forEach(l => {
+                    if (l.setStyle) l.setStyle({ color: newColor });
+                });
+                if (entry.label) entry.label.setStyle({ color: newColor });
+                if (storagePath) {
+                    await db.from('gpx_tracks')
+                        .update({ color: newColor })
+                        .eq('storage_path', storagePath);
+                }
+            });
+
             if (storagePath) {
                 deleteBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -174,6 +194,18 @@
                 deleteBtn.style.display = 'none';
                 renameBtn.style.display = 'none';
             }
+
+            // Etiqueta con nombre sobre la ruta
+            const center = g.getBounds().getCenter();
+            const label = L.tooltip({
+                permanent: true,
+                direction: 'top',
+                className: 'route-label'
+            })
+            .setContent(filename)
+            .setLatLng(center)
+            .addTo(map);
+            entry.label = label;
 
             allBounds.push(g.getBounds());
             renderCards();
@@ -263,6 +295,7 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
                 .eq('storage_path', storagePath);
 
             map.removeLayer(entry.layer);
+            if (entry.label) map.removeLayer(entry.label);
             trackCards = trackCards.filter(t => t !== entry);
             if (selectedCard === entry) selectedCard = null;
             renderCards();
@@ -402,7 +435,7 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
                 if (dlError) { console.warn('Error descargando', track.filename); continue; }
 
                 const text = await fileData.text();
-                await renderGPX(text, track.display_name || track.filename, true, track.storage_path);
+                await renderGPX(text, track.display_name || track.filename, true, track.storage_path, track.color);
             }
 
             if (allBounds.length > 0) {
