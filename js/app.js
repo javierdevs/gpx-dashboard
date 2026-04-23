@@ -142,6 +142,7 @@
             card.style.borderLeftColor = color;
             card.dataset.timestamp = start ? start.getTime() : 0;
             card.innerHTML = `
+                <button class="rename-btn" title="Renombrar ruta">✏️</button>
                 <button class="delete-btn" title="Eliminar ruta">✕</button>
                 <h4>${filename}</h4>
                 <div class="grid-meta">
@@ -158,13 +159,20 @@
             card.addEventListener('click', () => selectTrack(entry));
 
             const deleteBtn = card.querySelector('.delete-btn');
+            const renameBtn = card.querySelector('.rename-btn');
+
             if (storagePath) {
                 deleteBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     deleteTrack(entry, storagePath);
                 });
+                renameBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openRenameModal(card, storagePath, filename);
+                });
             } else {
                 deleteBtn.style.display = 'none';
+                renameBtn.style.display = 'none';
             }
 
             allBounds.push(g.getBounds());
@@ -210,6 +218,38 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
     uploadFiles(e.target.files);
     this.value = '';
 });
+
+    // ── Renombrar ruta ───────────────────────────────────────────
+    let renameTarget = null;
+
+    document.getElementById('rename-save').addEventListener('click', async function() {
+        const newName = document.getElementById('rename-input').value.trim();
+        if (!newName || !renameTarget) return;
+
+        try {
+            await db.from('gpx_tracks')
+                .update({ display_name: newName })
+                .eq('storage_path', renameTarget.storagePath);
+                
+
+            renameTarget.card.querySelector('h4').textContent = newName;
+            document.getElementById('rename-modal').classList.remove('active');
+            renameTarget = null;
+        } catch (err) {
+            console.error('Error renombrando:', err);
+        }
+    });
+
+    document.getElementById('rename-cancel').addEventListener('click', function() {
+        document.getElementById('rename-modal').classList.remove('active');
+        renameTarget = null;
+    });
+
+    function openRenameModal(card, storagePath, currentName) {
+        renameTarget = { card, storagePath };
+        document.getElementById('rename-input').value = currentName;
+        document.getElementById('rename-modal').classList.add('active');
+    } 
 
     // ── Eliminar ruta ────────────────────────────────────────────
     async function deleteTrack(entry, storagePath) {
@@ -353,6 +393,7 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
 
             for (let i = 0; i < tracks.length; i++) {
                 const track = tracks[i];
+                
 
                 const { data: fileData, error: dlError } = await db.storage
                     .from(BUCKET)
@@ -361,7 +402,7 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
                 if (dlError) { console.warn('Error descargando', track.filename); continue; }
 
                 const text = await fileData.text();
-                await renderGPX(text, track.filename, true, track.storage_path);
+                await renderGPX(text, track.display_name || track.filename, true, track.storage_path);
             }
 
             if (allBounds.length > 0) {
