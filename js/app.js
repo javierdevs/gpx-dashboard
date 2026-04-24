@@ -15,9 +15,22 @@
         }
     }
 
-    function showDashboard(email) {
+    let currentUserRole = null;
+
+    async function showDashboard(email) {
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('user-email').textContent = email;
+
+        const { data: { user } } = await db.auth.getUser();
+        const { data: roleData } = await db
+            .from('user_roles')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+
+        currentUserRole = roleData ? roleData.role : 'asesor';
+        
+
         loadFromCloud();
     }
 
@@ -109,7 +122,7 @@
 
     /* ── File input ────────────────────────────────────────────── */
 // ── Renderiza un GPX en el mapa y sidebar ────────────────────
-    function renderGPX(gpxText, filename, fromCloud = false, storagePath = null, savedColor = null) {
+    function renderGPX(gpxText, filename, fromCloud = false, storagePath = null, savedColor = null, ownerId = null) {
         return new Promise((resolve) => {
         const color = savedColor || '#' + ((1 << 24) * Math.random() | 0).toString(16).padStart(6, '0');
 
@@ -156,7 +169,7 @@
                 </div>
             `;
 
-            const entry = { date: start ? start.getTime() : 0, element: card, layer: g, color };
+            const entry = { date: start ? start.getTime() : 0, element: card, layer: g, color, userId: card.dataset.userId };
             trackCards.push(entry);
             g.on('click', function() {
                 selectTrack(entry);
@@ -188,13 +201,30 @@
             });
 
             if (storagePath) {
-                deleteBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    deleteTrack(entry, storagePath);
-                });
-                renameBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    openRenameModal(card, storagePath, filename);
+                // Borrar — solo superadmin y gerente
+                if (['superadmin', 'gerente'].includes(currentUserRole)) {
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        deleteTrack(entry, storagePath);
+                    });
+                } else {
+                    deleteBtn.style.display = 'none';
+                }
+
+                // Renombrar — superadmin, gerente, supervisor y asesor solo las propias
+                const canRename = ['superadmin', 'gerente', 'supervisor'].includes(currentUserRole) ||
+                    (currentUserRole === 'asesor' && ownerId === (db.auth.getUser().then(r => r.data.user.id)));
+
+                db.auth.getUser().then(({ data: { user } }) => {
+                    if (['superadmin', 'gerente', 'supervisor'].includes(currentUserRole) ||
+                        (currentUserRole === 'asesor' && ownerId === user.id)) {
+                        renameBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            openRenameModal(card, storagePath, filename);
+                        });
+                    } else {
+                        renameBtn.style.display = 'none';
+                    }
                 });
             } else {
                 deleteBtn.style.display = 'none';
@@ -237,9 +267,10 @@
 
             if (upError) throw upError;
 
+            const { data: { user } } = await db.auth.getUser();
             const { error: dbError } = await db
                 .from('gpx_tracks')
-                .insert({ filename: file.name, storage_path: storagePath });
+                .insert({ filename: file.name, storage_path: storagePath, user_id: user.id });
 
             if (dbError) throw dbError;
 
@@ -441,7 +472,7 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
                 if (dlError) { console.warn('Error descargando', track.filename); continue; }
 
                 const text = await fileData.text();
-                await renderGPX(text, track.display_name || track.filename, true, track.storage_path, track.color);
+                await renderGPX(text, track.display_name || track.filename, true, track.storage_path, track.color, track.user_id);
             }
 
             if (allBounds.length > 0) {
