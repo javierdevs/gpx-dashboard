@@ -29,6 +29,13 @@
             .single();
 
         currentUserRole = roleData ? roleData.role : 'asesor';
+        const roleLabels = {
+            superadmin: '🔑 Super Admin',
+            gerente: '👔 Gerente',
+            supervisor: '👥 Supervisor',
+            asesor: '🚶 Asesor'
+        };
+        document.getElementById('user-role').textContent = roleLabels[currentUserRole] || '🚶 Asesor';
         
 
         loadFromCloud();
@@ -122,7 +129,7 @@
 
     /* ── File input ────────────────────────────────────────────── */
 // ── Renderiza un GPX en el mapa y sidebar ────────────────────
-    function renderGPX(gpxText, filename, fromCloud = false, storagePath = null, savedColor = null, ownerId = null) {
+    function renderGPX(gpxText, filename, fromCloud = false, storagePath = null, savedColor = null, ownerId = null, ownerEmail = null, ownerName = null) {
         return new Promise((resolve) => {
         const color = savedColor || '#' + ((1 << 24) * Math.random() | 0).toString(16).padStart(6, '0');
 
@@ -166,6 +173,8 @@
                     <div>Inicio: <span class="val">${start ? start.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--'}</span></div>
                     <div>Fin: <span class="val">${end ? end.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--'}</span></div>
                     <div style="grid-column: span 2">Vel. Media: <span class="val">${speedKmh.toFixed(2)} km/h</span></div>
+                    ${ownerName && ['superadmin', 'gerente', 'supervisor'].includes(currentUserRole) ? 
+                    `<div>👤 <span class="val">${ownerName}</span></div>` : ''}
                 </div>
             `;
 
@@ -268,9 +277,21 @@
             if (upError) throw upError;
 
             const { data: { user } } = await db.auth.getUser();
+            const { data: profileData } = await db
+                .from('profiles')
+                .select('full_name')
+                .eq('id', user.id)
+                .single();
+
             const { error: dbError } = await db
                 .from('gpx_tracks')
-                .insert({ filename: file.name, storage_path: storagePath, user_id: user.id });
+                .insert({ 
+                    filename: file.name, 
+                    storage_path: storagePath, 
+                    user_id: user.id, 
+                    user_email: user.email,
+                    user_name: profileData ? profileData.full_name : user.email
+                });
 
             if (dbError) throw dbError;
 
@@ -472,7 +493,7 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
                 if (dlError) { console.warn('Error descargando', track.filename); continue; }
 
                 const text = await fileData.text();
-                await renderGPX(text, track.display_name || track.filename, true, track.storage_path, track.color, track.user_id);
+                await renderGPX(text, track.display_name || track.filename, true, track.storage_path, track.color, track.user_id, track.user_email, track.user_name);
             }
 
             if (allBounds.length > 0) {
