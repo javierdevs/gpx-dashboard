@@ -17,6 +17,109 @@
 
     let currentUserRole = null;
 
+    // ── Changelog ────────────────────────────────────────────────
+    const changelog = [
+        {
+            version: 'v0.8 — Identificación de usuarios',
+            date: '23 de abril 2026',
+            changes: [
+                'Nombre del asesor visible en tarjetas',
+                'Tabla de perfiles con nombre completo',
+                'Email del asesor vinculado a nombre real'
+            ]
+        },
+        {
+            version: 'v0.7 — Roles y permisos',
+            date: '23 de abril 2026',
+            changes: [
+                'Sistema de roles: superadmin, gerente, supervisor, asesor',
+                'Asesor solo ve y sube sus propias rutas',
+                'Solo superadmin y gerente pueden borrar rutas',
+                'Asesor puede renombrar solo sus propias rutas',
+                'Rol visible debajo del correo en el header'
+            ]
+        },
+        {
+            version: 'v0.6 — Gestión de rutas',
+            date: '23 de abril 2026',
+            changes: [
+                'Selector de color por ruta',
+                'Etiquetas con nombre de ruta visible en el mapa',
+                'Click en ruta del mapa selecciona tarjeta en sidebar',
+                'Botón renombrar ruta con modal',
+                'Botón eliminar ruta'
+            ]
+        },
+        {
+            version: 'v0.5 — Mapa',
+            date: '22 de abril 2026',
+            changes: [
+                'Vista de satélite con Esri (gratuita)',
+                'Alternancia entre mapa oscuro y satélite'
+            ]
+        },
+        {
+            version: 'v0.4 — Seguridad',
+            date: '22 de abril 2026',
+            changes: [
+                'Login con email y contraseña',
+                'Botón de cerrar sesión'
+            ]
+        },
+        {
+            version: 'v0.3 — Almacenamiento',
+            date: '22 de abril 2026',
+            changes: [
+                'Publicado en GitHub Pages',
+                'Almacenamiento en Supabase',
+                'Subida de archivos GPX desde la página',
+                'Carga automática al abrir la página'
+            ]
+        },
+        {
+            version: 'v0.2 — Mejoras',
+            date: '22 de abril 2026',
+            changes: [
+                'Resaltado de ruta al hacer click en tarjeta',
+                'Atenuación de rutas no seleccionadas',
+                'Ordenar rutas por fecha automático y manual'
+            ]
+        },
+        {
+            version: 'v0.1 — Base',
+            date: '22 de abril 2026',
+            changes: [
+                'Visualizador GPX con mapa oscuro',
+                'Tarjetas con estadísticas por ruta',
+                'Estadísticas por semana y mes'
+            ]
+        }
+    ];
+
+    function renderChangelog() {
+        const container = document.getElementById('changelog-content');
+        container.innerHTML = changelog.map(v => `
+            <div style="margin-bottom:20px;">
+                <div style="color:var(--accent); font-weight:bold; font-size:0.95em;">${v.version}</div>
+                <div style="color:#555; font-size:0.78em; margin-bottom:8px;">${v.date}</div>
+                ${v.changes.map(c => `
+                    <div style="font-size:0.85em; color:#aaa; padding:4px 0; border-bottom:1px solid #2a2a2a;">
+                        ✓ ${c}
+                    </div>
+                `).join('')}
+            </div>
+        `).join('');
+    }
+
+    document.getElementById('changelog-btn').addEventListener('click', function() {
+        renderChangelog();
+        document.getElementById('changelog-modal').style.display = 'flex';
+    });
+
+    document.getElementById('changelog-close').addEventListener('click', function() {
+        document.getElementById('changelog-modal').style.display = 'none';
+    });
+
     async function showDashboard(email) {
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('user-email').textContent = email;
@@ -36,6 +139,9 @@
             asesor: '🚶 Asesor'
         };
         document.getElementById('user-role').textContent = roleLabels[currentUserRole] || '🚶 Asesor';
+        if (['superadmin', 'gerente', 'supervisor'].includes(currentUserRole)) {
+            document.getElementById('changelog-btn').style.display = 'block';
+        }
         
 
         loadFromCloud();
