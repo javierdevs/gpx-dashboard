@@ -611,5 +611,20 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
             console.error('Error cargando desde Supabase:', err);
         }
     }
+        
+    // ── Sidebar responsive ───────────────────────────────────────
+    const menuBtn = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
 
+    menuBtn.addEventListener('click', function() {
+        sidebar.classList.toggle('open');
+        overlay.classList.toggle('open');
+    });
+
+    overlay.addEventListener('click', function() {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('open');
+    });
+    
     checkSession();
