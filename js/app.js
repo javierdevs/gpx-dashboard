@@ -537,7 +537,56 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
             console.error('Error cargando desde Supabase:', err);
         }
     }
-        
+    // ── Filtrar por fecha ────────────────────────────────────────
+    let activeDateFilter = 'all';
+
+    document.querySelectorAll('.date-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            activeDateFilter = this.dataset.filter;
+            const customInput = document.getElementById('custom-date');
+            customInput.style.display = activeDateFilter === 'custom' ? 'block' : 'none';
+            if (activeDateFilter !== 'custom') applyDateFilter();
+        });
+
+        document.getElementById('custom-date').addEventListener('change', function() {
+            applyDateFilter();
+        });
+    });
+
+    function applyDateFilter() {
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const endOfDay = startOfDay + 86400000;
+        const startOfWeek = new Date(getISOMonday(now)).getTime();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+        const customInput = document.getElementById('custom-date').value;
+        const customStart = customInput ? new Date(customInput).getTime() + (new Date().getTimezoneOffset() * 60000) : null;
+        const customEnd = customStart ? customStart + 86400000 : null;
+
+        trackCards.forEach(entry => {
+            const date = entry.date;
+            let show = true;
+
+            if (activeDateFilter === 'today') show = date >= startOfDay && date < endOfDay;
+            else if (activeDateFilter === 'week') show = date >= startOfWeek;
+            else if (activeDateFilter === 'month') show = date >= startOfMonth;
+            else if (activeDateFilter === 'custom' && customStart) show = date >= customStart && date < customEnd;
+
+            entry.element.style.display = show ? 'block' : 'none';
+            entry.layer.getLayers().forEach(l => {
+                if (show) map.addLayer(l);
+                else map.removeLayer(l);
+            });
+            if (entry.label) {
+                if (show) entry.label.addTo(map);
+                else map.removeLayer(entry.label);
+            }
+        });
+    }
+
     // ── Filtrar asesores ─────────────────────────────────────────
     let activeFilters = []; // emails de asesores activos, vacío = todos
 

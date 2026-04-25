@@ -1,5 +1,14 @@
 [
     {
+    "version": "v1.0 — Filtros de fecha y asesores",
+    "date": "25 de abril 2026",
+    "changes": [
+        "Filtrar rutas por Hoy, Semana, Mes y fecha específica",
+        "Panel de filtrar asesores por nombre",
+        "Changelog cargado desde archivo JSON"
+    ]
+},
+    {
         "version": "v0.9 — Filtros y responsive",
         "date": "24 de abril 2026",
         "changes": [

@@ -73,6 +73,14 @@
         <button id="filter-btn" style="display:none; margin-top:8px; width:100%; padding:6px 12px; background:none; border:1px solid #444; color:#aaa; border-radius:5px; cursor:pointer; font-size:0.8em; font-family:inherit;">👥 Filtrar asesores</button>
         <button id="changelog-btn" style="display:none; margin-top:8px; width:100%; padding:6px 12px; background:none; border:1px solid #444; color:#aaa; border-radius:5px; cursor:pointer; font-size:0.8em; font-family:inherit;">📋 Ver novedades</button>
         <input type="file" id="gpx-input" multiple accept=".gpx">
+        <div id="date-filter" style="display:flex; gap:4px; margin-top:8px; flex-wrap:wrap;">
+            <button class="date-btn active" data-filter="all">Todos</button>
+            <button class="date-btn" data-filter="today">Hoy</button>
+            <button class="date-btn" data-filter="week">Semana</button>
+            <button class="date-btn" data-filter="month">Mes</button>
+            <button class="date-btn" data-filter="custom">📅</button>
+        </div>
+        <input type="date" id="custom-date" style="display:none; margin-top:6px; width:100%; padding:6px; background:#2a2a2a; color:white; border:1px solid #444; border-radius:5px; box-sizing:border-box;">
         <button id="sort-btn" title="Ordenar por fecha">
             <span class="arrow">↓</span>
             <span id="sort-label">Más reciente primero</span>
