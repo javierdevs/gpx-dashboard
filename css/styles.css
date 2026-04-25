@@ -82,12 +82,14 @@
         @media (max-width: 768px) {
     #menu-btn { display: block; }
     
-    #sidebar { position: fixed; left: -380px; top: 0; height: 100vh; z-index: 1100; transition: left 0.3s ease; }
-    #sidebar.open { left: 0; }
+    #sidebar { position: fixed; left: 0; top: 0; height: 100vh; z-index: 1100; transition: left 0.3s ease; }
+    #sidebar.closed { left: -380px; }
     
     #sidebar-overlay.open { display: block; }
     
     #map { width: 100vw; }
+
+    #view-map-btn { display: block !important; }
 }
     /* Fix fondo hamburguesa en móvil */
     .leaflet-top.leaflet-left { top: 60px; }

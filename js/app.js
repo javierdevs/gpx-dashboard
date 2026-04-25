@@ -614,17 +614,22 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
         
     // ── Sidebar responsive ───────────────────────────────────────
     const menuBtn = document.getElementById('menu-btn');
-    const sidebar = document.getElementById('sidebar');
+    const sidebarEl = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
+    const viewMapBtn = document.getElementById('view-map-btn');
 
-    menuBtn.addEventListener('click', function() {
-        sidebar.classList.toggle('open');
-        overlay.classList.toggle('open');
-    });
+    function openSidebar() {
+        sidebarEl.classList.remove('closed');
+        overlay.classList.add('open');
+    }
 
-    overlay.addEventListener('click', function() {
-        sidebar.classList.remove('open');
+    function closeSidebar() {
+        sidebarEl.classList.add('closed');
         overlay.classList.remove('open');
-    });
+    }
+
+    menuBtn.addEventListener('click', openSidebar);
+    overlay.addEventListener('click', closeSidebar);
+    viewMapBtn.addEventListener('click', closeSidebar);
     
     checkSession();
