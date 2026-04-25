@@ -18,85 +18,9 @@
     let currentUserRole = null;
 
     // ── Changelog ────────────────────────────────────────────────
-    const changelog = [
-        {
-            version: 'v0.8 — Identificación de usuarios',
-            date: '23 de abril 2026',
-            changes: [
-                'Nombre del asesor visible en tarjetas',
-                'Tabla de perfiles con nombre completo',
-                'Email del asesor vinculado a nombre real'
-            ]
-        },
-        {
-            version: 'v0.7 — Roles y permisos',
-            date: '23 de abril 2026',
-            changes: [
-                'Sistema de roles: superadmin, gerente, supervisor, asesor',
-                'Asesor solo ve y sube sus propias rutas',
-                'Solo superadmin y gerente pueden borrar rutas',
-                'Asesor puede renombrar solo sus propias rutas',
-                'Rol visible debajo del correo en el header'
-            ]
-        },
-        {
-            version: 'v0.6 — Gestión de rutas',
-            date: '23 de abril 2026',
-            changes: [
-                'Selector de color por ruta',
-                'Etiquetas con nombre de ruta visible en el mapa',
-                'Click en ruta del mapa selecciona tarjeta en sidebar',
-                'Botón renombrar ruta con modal',
-                'Botón eliminar ruta'
-            ]
-        },
-        {
-            version: 'v0.5 — Mapa',
-            date: '22 de abril 2026',
-            changes: [
-                'Vista de satélite con Esri (gratuita)',
-                'Alternancia entre mapa oscuro y satélite'
-            ]
-        },
-        {
-            version: 'v0.4 — Seguridad',
-            date: '22 de abril 2026',
-            changes: [
-                'Login con email y contraseña',
-                'Botón de cerrar sesión'
-            ]
-        },
-        {
-            version: 'v0.3 — Almacenamiento',
-            date: '22 de abril 2026',
-            changes: [
-                'Publicado en GitHub Pages',
-                'Almacenamiento en Supabase',
-                'Subida de archivos GPX desde la página',
-                'Carga automática al abrir la página'
-            ]
-        },
-        {
-            version: 'v0.2 — Mejoras',
-            date: '22 de abril 2026',
-            changes: [
-                'Resaltado de ruta al hacer click en tarjeta',
-                'Atenuación de rutas no seleccionadas',
-                'Ordenar rutas por fecha automático y manual'
-            ]
-        },
-        {
-            version: 'v0.1 — Base',
-            date: '22 de abril 2026',
-            changes: [
-                'Visualizador GPX con mapa oscuro',
-                'Tarjetas con estadísticas por ruta',
-                'Estadísticas por semana y mes'
-            ]
-        }
-    ];
-
-    function renderChangelog() {
+    async function renderChangelog() {
+        const response = await fetch('changelog.json');
+        const changelog = await response.json();
         const container = document.getElementById('changelog-content');
         container.innerHTML = changelog.map(v => `
             <div style="margin-bottom:20px;">
@@ -110,15 +34,16 @@
             </div>
         `).join('');
     }
-
-    document.getElementById('changelog-btn').addEventListener('click', function() {
-        renderChangelog();
+    
+document.getElementById('changelog-btn').addEventListener('click', async function() {
+        await renderChangelog();
         document.getElementById('changelog-modal').style.display = 'flex';
     });
 
     document.getElementById('changelog-close').addEventListener('click', function() {
         document.getElementById('changelog-modal').style.display = 'none';
     });
+    
 
     async function showDashboard(email) {
         document.getElementById('login-screen').style.display = 'none';
@@ -141,6 +66,7 @@
         document.getElementById('user-role').textContent = roleLabels[currentUserRole] || '🚶 Asesor';
         if (['superadmin', 'gerente', 'supervisor'].includes(currentUserRole)) {
             document.getElementById('changelog-btn').style.display = 'block';
+            document.getElementById('filter-btn').style.display = 'block';
         }
         
 
@@ -284,7 +210,7 @@
                 </div>
             `;
 
-            const entry = { date: start ? start.getTime() : 0, element: card, layer: g, color, userId: card.dataset.userId };
+            const entry = { date: start ? start.getTime() : 0, element: card, layer: g, color, userId: ownerId };
             trackCards.push(entry);
             g.on('click', function() {
                 selectTrack(entry);
@@ -371,7 +297,7 @@
 
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        console.log(`Subiendo ${i + 1}/${files.length}: ${file.name}`);
+        
 
         try {
             const storagePath = `${Date.now()}_${file.name}`;
@@ -612,6 +538,71 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
         }
     }
         
+    // ── Filtrar asesores ─────────────────────────────────────────
+    let activeFilters = []; // emails de asesores activos, vacío = todos
+
+    document.getElementById('filter-btn').addEventListener('click', async function() {
+        // Cargar lista de asesores
+        const { data: profiles } = await db.from('profiles').select('id, full_name');
+        const { data: roles } = await db.from('user_roles').select('id, role').eq('role', 'asesor');
+
+        const asesorIds = roles ? roles.map(r => r.id) : [];
+        const asesores = profiles ? profiles.filter(p => asesorIds.includes(p.id)) : [];
+        
+
+        const container = document.getElementById('filter-list');
+        container.innerHTML = `
+            <label style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #333; cursor:pointer; font-size:0.9em; color:#aaa;">
+                <input type="checkbox" id="filter-all"> Todos
+            </label>
+            ${asesores.map(a => `
+                <label style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #333; cursor:pointer; font-size:0.9em; color:#aaa;">
+                    <input type="checkbox" class="filter-asesor" value="${a.id}" ${activeFilters.includes(a.id) ? 'checked' : ''}> ${a.full_name}
+                </label>
+            `).join('')}
+        `;
+
+        // Toggle todos
+        document.getElementById('filter-all').addEventListener('change', function() {
+            document.querySelectorAll('.filter-asesor').forEach(cb => cb.checked = this.checked);
+        });
+
+        document.getElementById('filter-modal').style.display = 'flex';
+    });
+
+    function closeFilterModal() {
+        document.getElementById('filter-modal').style.display = 'none';
+    }
+
+    document.getElementById('filter-close').addEventListener('click', closeFilterModal);
+    document.getElementById('filter-cancel').addEventListener('click', closeFilterModal);
+
+    document.getElementById('filter-apply').addEventListener('click', function() {
+        const allChecked = document.getElementById('filter-all').checked;
+        if (allChecked) {
+            activeFilters = [];
+        } else {
+            activeFilters = [...document.querySelectorAll('.filter-asesor:checked')].map(cb => cb.value);
+        }
+        applyFilters();
+        closeFilterModal();
+    });
+
+    function applyFilters() {
+        trackCards.forEach(entry => {
+            const show = activeFilters.length === 0 || activeFilters.includes(entry.userId);
+            entry.element.style.display = show ? 'block' : 'none';
+            entry.layer.getLayers().forEach(l => {
+                if (show) map.addLayer(l);
+                else map.removeLayer(l);
+            });
+            if (entry.label) {
+                if (show) entry.label.addTo(map);
+                else map.removeLayer(entry.label);
+            }
+        });
+    }
+
     // ── Sidebar responsive ───────────────────────────────────────
     const menuBtn = document.getElementById('menu-btn');
     const sidebarEl = document.getElementById('sidebar');

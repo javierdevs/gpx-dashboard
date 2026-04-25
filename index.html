@@ -20,6 +20,21 @@
     </div>
     </div>
 
+    <!-- Modal filtrar asesores -->
+    <div id="filter-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; z-index:9998;">
+        <div style="background:var(--card-bg); padding:30px; border-radius:12px; width:320px; border-top:3px solid var(--accent);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h3 style="margin:0; color:var(--accent);">👥 Filtrar asesores</h3>
+                <button id="filter-close" style="background:none; border:none; color:#aaa; cursor:pointer; font-size:1.2em;">✕</button>
+            </div>
+            <div id="filter-list" style="margin-bottom:20px;"></div>
+            <div style="display:flex; gap:8px;">
+                <button id="filter-cancel" style="flex:1; padding:10px; background:#2a2a2a; color:#aaa; border:1px solid #444; border-radius:6px; cursor:pointer; font-size:0.9em;">Cancelar</button>
+                <button id="filter-apply" style="flex:1; padding:10px; background:var(--accent); color:#000; border:none; border-radius:6px; cursor:pointer; font-size:0.9em; font-weight:bold;">Aplicar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal renombrar ruta -->
     <div id="rename-modal">
     <div class="modal-box">
@@ -55,6 +70,7 @@
         </div>
         <div id="user-email" style="font-size:0.75em; color:#666; margin-top:4px;"></div>
         <div id="user-role" style="font-size:0.75em; color:var(--accent); margin-top:2px;"></div>
+        <button id="filter-btn" style="display:none; margin-top:8px; width:100%; padding:6px 12px; background:none; border:1px solid #444; color:#aaa; border-radius:5px; cursor:pointer; font-size:0.8em; font-family:inherit;">👥 Filtrar asesores</button>
         <button id="changelog-btn" style="display:none; margin-top:8px; width:100%; padding:6px 12px; background:none; border:1px solid #444; color:#aaa; border-radius:5px; cursor:pointer; font-size:0.8em; font-family:inherit;">📋 Ver novedades</button>
         <input type="file" id="gpx-input" multiple accept=".gpx">
         <button id="sort-btn" title="Ordenar por fecha">
