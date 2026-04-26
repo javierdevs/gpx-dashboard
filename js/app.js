@@ -70,7 +70,11 @@ document.getElementById('changelog-btn').addEventListener('click', async functio
         }
         
 
-        loadFromCloud();
+        if (currentUserRole === 'asesor') {
+            loadModoLite();
+        } else {
+            loadFromCloud();
+        }
     }
 
     document.getElementById('login-btn').addEventListener('click', async function() {
@@ -328,6 +332,45 @@ document.getElementById('changelog-btn').addEventListener('click', async functio
             if (dbError) throw dbError;
 
             const text = await file.text();
+            const parser = new DOMParser();
+            const gpxDoc = parser.parseFromString(text, 'text/xml');
+            const points = [...gpxDoc.querySelectorAll('trkpt')];
+            
+            let distKm = 0;
+            let startTime = null;
+            let endTime = null;
+
+            if (points.length > 0) {
+                startTime = points[0].querySelector('time')?.textContent || null;
+                endTime = points[points.length - 1].querySelector('time')?.textContent || null;
+
+                for (let j = 1; j < points.length; j++) {
+                    const lat1 = parseFloat(points[j-1].getAttribute('lat'));
+                    const lon1 = parseFloat(points[j-1].getAttribute('lon'));
+                    const lat2 = parseFloat(points[j].getAttribute('lat'));
+                    const lon2 = parseFloat(points[j].getAttribute('lon'));
+                    const R = 6371;
+                    const dLat = (lat2-lat1) * Math.PI/180;
+                    const dLon = (lon2-lon1) * Math.PI/180;
+                    const a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+                        Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+                        Math.sin(dLon/2)*Math.sin(dLon/2);
+                    distKm += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                }
+            }
+
+            const durationMs = startTime && endTime ? 
+                new Date(endTime) - new Date(startTime) : null;
+            const avgSpeed = durationMs ? distKm / (durationMs / 3600000) : null;
+
+            await db.from('gpx_tracks').update({
+                distance_km: distKm,
+                duration_min: durationMs ? durationMs / 60000 : null,
+                avg_speed: avgSpeed,
+                start_time: startTime,
+                end_time: endTime
+            }).eq('storage_path', storagePath);
+
             await renderGPX(text, file.name, true, storagePath);
 
         } catch (err) {
@@ -514,29 +557,115 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
             if (error) throw error;
             if (!tracks || tracks.length === 0) return;
 
-            for (let i = 0; i < tracks.length; i++) {
-                const track = tracks[i];
-                
+            // Guardar IDs descargados en localStorage
+            const cachedIds = JSON.parse(localStorage.getItem('gpx_cached_ids') || '[]');
+            const allIds = tracks.map(t => t.id);
+            localStorage.setItem('gpx_cached_ids', JSON.stringify(allIds));
 
-                const { data: fileData, error: dlError } = await db.storage
-                    .from(BUCKET)
-                    .download(track.storage_path);
+            if (isMobile) {
+                // Móvil: solo mostrar tarjetas desde metadata
+                for (const track of tracks) {
+                    renderCardFromMetadata(track);
+                }
+            } else {
+                // Escritorio: cargar GPX completos con caché
+                for (const track of tracks) {
+                    const cacheKey = `gpx_${track.storage_path}`;
+                    const { data: fileData, error: dlError } = await db.storage
+                        .from(BUCKET)
+                        .download(track.storage_path);
 
-                if (dlError) { console.warn('Error descargando', track.filename); continue; }
+                    if (dlError) { console.warn('Error descargando', track.filename); continue; }
+                    const text = await fileData.text();
 
-                const text = await fileData.text();
-                await renderGPX(text, track.display_name || track.filename, true, track.storage_path, track.color, track.user_id, track.user_email, track.user_name);
-            }
+                    await renderGPX(text, track.display_name || track.filename, true, track.storage_path, track.color, track.user_id, track.user_email, track.user_name);
+                }
 
-            if (allBounds.length > 0) {
-                const combined = allBounds.reduce((acc, b) => acc.extend(b), L.latLngBounds(allBounds[0]));
-                map.fitBounds(combined, { padding: [30, 30] });
+                if (allBounds.length > 0) {
+                    const combined = allBounds.reduce((acc, b) => acc.extend(b), L.latLngBounds(allBounds[0]));
+                    map.fitBounds(combined, { padding: [30, 30] });
+                }
             }
 
         } catch (err) {
             console.error('Error cargando desde Supabase:', err);
         }
     }
+
+    // ── Detección de dispositivo ─────────────────────────────────
+
+    // ── Renderizar tarjeta desde metadata (móvil) ────────────────
+    function renderCardFromMetadata(track) {
+        const filename = track.display_name || track.filename;
+        const color = track.color || '#00e676';
+        const start = track.start_time ? new Date(track.start_time) : null;
+        const end = track.end_time ? new Date(track.end_time) : null;
+        const distKm = track.distance_km || 0;
+        const speedKmh = track.avg_speed || 0;
+
+        // Actualizar stats globales
+        totalGlobalDist += distKm;
+        document.getElementById('global-km').innerText = totalGlobalDist.toFixed(2);
+
+        if (start) {
+            const info = getWeekInfo(start);
+            if (!statsData[info.weekKey]) {
+                statsData[info.weekKey] = { monthLabel: info.monthLabel, rangeLabel: info.rangeLabel, monday: info.monday, dist: 0 };
+            }
+            statsData[info.weekKey].dist += distKm;
+            updateStatsUI();
+        }
+
+        const card = document.createElement('div');
+        card.className = 'track-card';
+        card.style.borderLeftColor = color;
+        card.dataset.timestamp = start ? start.getTime() : 0;
+        card.innerHTML = `
+            <h4>${filename}</h4>
+            <div class="grid-meta">
+                <div>Fecha: <span class="val">${start ? start.toLocaleDateString('es-ES') : 'N/A'}</span></div>
+                <div>Dist: <span class="val">${distKm.toFixed(2)} km</span></div>
+                <div>Inicio: <span class="val">${start ? start.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--'}</span></div>
+                <div>Fin: <span class="val">${end ? end.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--'}</span></div>
+                <div style="grid-column: span 2">Vel. Media: <span class="val">${speedKmh.toFixed(2)} km/h</span></div>
+                ${track.user_name && ['superadmin', 'gerente', 'supervisor'].includes(currentUserRole) ? 
+                    `<div>👤 <span class="val">${track.user_name}</span></div>` : ''}
+            </div>
+            <div class="mobile-map-btn" style="margin-top:8px; text-align:center; color:var(--accent); font-size:0.8em; cursor:pointer;">
+                🗺 Tap para ver en mapa
+            </div>
+        `;
+
+        const entry = { date: start ? start.getTime() : 0, element: card, layer: null, color, userId: track.user_id, storagePath: track.storage_path };
+        trackCards.push(entry);
+
+        // Al hacer click carga el GPX bajo demanda
+        card.addEventListener('click', async () => {
+            if (!entry.layer) {
+                const { data: fileData, error } = await db.storage
+                    .from(BUCKET)
+                    .download(track.storage_path);
+                if (error) return;
+                const text = await fileData.text();
+                await renderGPX(text, filename, true, track.storage_path, track.color, track.user_id, track.user_email, track.user_name);
+                // Reemplazar entry con el nuevo que tiene layer
+                const newEntry = trackCards[trackCards.length - 1];
+                entry.layer = newEntry.layer;
+                entry.label = newEntry.label;
+                trackCards.pop();
+                selectTrack(entry);
+                closeSidebar();
+            } else {
+                selectTrack(entry);
+                closeSidebar();
+            }
+        });
+
+        renderCards();
+    }
+
+    const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(navigator.userAgent) || window.innerWidth <= 768;
+
     // ── Filtrar por fecha ────────────────────────────────────────
     let activeDateFilter = 'all';
 
@@ -576,10 +705,12 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
             else if (activeDateFilter === 'custom' && customStart) show = date >= customStart && date < customEnd;
 
             entry.element.style.display = show ? 'block' : 'none';
-            entry.layer.getLayers().forEach(l => {
-                if (show) map.addLayer(l);
-                else map.removeLayer(l);
-            });
+            if (entry.layer) {
+                entry.layer.getLayers().forEach(l => {
+                    if (show) map.addLayer(l);
+                    else map.removeLayer(l);
+                });
+            }
             if (entry.label) {
                 if (show) entry.label.addTo(map);
                 else map.removeLayer(entry.label);
@@ -651,6 +782,89 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
             }
         });
     }
+
+    // ── Modo Lite ────────────────────────────────────────────────
+    async function loadModoLite() {
+        document.getElementById('modo-lite').style.display = 'flex';
+        document.getElementById('sidebar').style.display = 'none';
+        document.getElementById('map').style.display = 'none';
+        document.getElementById('menu-btn').style.display = 'none';
+
+        // Cargar nombre del usuario
+        const { data: { user } } = await db.auth.getUser();
+        const { data: profile } = await db.from('profiles').select('full_name').eq('id', user.id).single();
+        document.getElementById('lite-user-name').textContent = `🚶 ${profile ? profile.full_name : user.email}`;
+
+        // Cargar rutas del asesor
+        const { data: tracks } = await db
+            .from('gpx_tracks')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('uploaded_at', { ascending: false });
+
+        const list = document.getElementById('lite-list');
+        list.innerHTML = '';
+
+        if (!tracks || tracks.length === 0) {
+            list.innerHTML = '<div style="text-align:center; color:#444; padding:40px 20px; font-size:0.85em;">📂 No hay rutas. Sube tu primer GPX.</div>';
+            return;
+        }
+
+        tracks.forEach(track => {
+            const start = track.start_time ? new Date(track.start_time) : null;
+            const end = track.end_time ? new Date(track.end_time) : null;
+            const distKm = track.distance_km || 0;
+
+            const card = document.createElement('div');
+            card.className = 'track-card';
+            card.style.borderLeftColor = track.color || 'var(--accent)';
+            card.innerHTML = `
+                <button class="rename-btn" title="Renombrar">✏️</button>
+                <h4>${track.display_name || track.filename}</h4>
+                <div class="grid-meta">
+                    <div>Fecha: <span class="val">${start ? start.toLocaleDateString('es-ES') : 'N/A'}</span></div>
+                    <div>Dist: <span class="val">${distKm.toFixed(2)} km</span></div>
+                    <div>Inicio: <span class="val">${start ? start.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--'}</span></div>
+                    <div>Fin: <span class="val">${end ? end.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--'}</span></div>
+                    <div style="grid-column: span 2">Vel. Media: <span class="val">${track.avg_speed ? track.avg_speed.toFixed(2) : '0.00'} km/h</span></div>
+                </div>
+            `;
+
+            // Botón renombrar
+            card.querySelector('.rename-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                openRenameModal(card, track.storage_path, track.display_name || track.filename);
+            });
+
+            list.appendChild(card);
+        });
+    }
+
+    // Subir GPX en Modo Lite
+    document.getElementById('lite-gpx-input').addEventListener('change', async function(e) {
+        const files = e.target.files;
+        if (!files.length) return;
+        document.getElementById('lite-status').textContent = 'Subiendo...';
+        await uploadFiles(files);
+        document.getElementById('lite-status').textContent = '✓ Subido correctamente';
+        this.value = '';
+        loadModoLite();
+    });
+
+    // Logout Modo Lite
+    document.getElementById('lite-logout-btn').addEventListener('click', async function() {
+        await db.auth.signOut();
+        location.reload();
+    });
+
+    // Ver mapa completo
+    document.getElementById('lite-fullmap-btn').addEventListener('click', function() {
+        document.getElementById('modo-lite').style.display = 'none';
+        document.getElementById('sidebar').style.display = 'flex';
+        document.getElementById('map').style.display = 'block';
+        if (window.innerWidth <= 768) document.getElementById('menu-btn').style.display = 'block';
+        loadFromCloud();
+    });
 
     // ── Sidebar responsive ───────────────────────────────────────
     const menuBtn = document.getElementById('menu-btn');

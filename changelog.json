@@ -1,4 +1,13 @@
 [
+   {
+    "version": "v0.10 — Modo Lite y stats",
+    "date": "25 de abril 2026",
+    "changes": [
+        "Modo Lite para asesores sin mapa para ahorrar datos",
+        "Stats guardados al subir GPX: distancia, velocidad, inicio y fin",
+        "Botón Ver mapa completo desde Modo Lite"
+    ]
+},
     {
     "version": "v1.0 — Filtros de fecha y asesores",
     "date": "25 de abril 2026",
