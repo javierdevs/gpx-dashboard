@@ -242,6 +242,7 @@ document.getElementById('changelog-btn').addEventListener('click', async functio
                     await db.from('gpx_tracks')
                         .update({ color: newColor })
                         .eq('storage_path', storagePath);
+                    await GPX_CACHE.updateMeta(storagePath, { color: newColor });
                 }
             });
 
@@ -396,6 +397,7 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
                 .update({ display_name: newName })
                 .eq('storage_path', renameTarget.storagePath);
                 
+            await GPX_CACHE.updateMeta(renameTarget.storagePath, { displayName: newName });
 
             renameTarget.card.querySelector('h4').textContent = newName;
             document.getElementById('rename-modal').classList.remove('active');
@@ -426,7 +428,7 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
             await db.from('gpx_tracks')
                 .delete()
                 .eq('storage_path', storagePath);
-
+            await GPX_CACHE.remove(storagePath);   // ← agregar
             map.removeLayer(entry.layer);
             if (entry.label) map.removeLayer(entry.label);
             trackCards = trackCards.filter(t => t !== entry);
@@ -547,50 +549,83 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
         }
     }
     // ── Cargar todas las rutas desde Supabase al abrir la página ──
+    
     async function loadFromCloud() {
-        try {
-            const { data: tracks, error } = await db
-                .from('gpx_tracks')
-                .select('*')
-                .order('uploaded_at', { ascending: false });
+    try {
+        const { data: tracks, error } = await db
+            .from('gpx_tracks')
+            .select('*')
+            .order('uploaded_at', { ascending: false });
 
-            if (error) throw error;
-            if (!tracks || tracks.length === 0) return;
+        if (error) throw error;
+        if (!tracks || tracks.length === 0) return;
 
-            // Guardar IDs descargados en localStorage
-            const cachedIds = JSON.parse(localStorage.getItem('gpx_cached_ids') || '[]');
-            const allIds = tracks.map(t => t.id);
-            localStorage.setItem('gpx_cached_ids', JSON.stringify(allIds));
+        await GPX_CACHE.pruneOrphans(tracks.map(t => t.storage_path));
 
-            if (isMobile) {
-                // Móvil: solo mostrar tarjetas desde metadata
-                for (const track of tracks) {
-                    renderCardFromMetadata(track);
-                }
-            } else {
-                // Escritorio: cargar GPX completos con caché
-                for (const track of tracks) {
-                    const cacheKey = `gpx_${track.storage_path}`;
-                    const { data: fileData, error: dlError } = await db.storage
-                        .from(BUCKET)
-                        .download(track.storage_path);
-
-                    if (dlError) { console.warn('Error descargando', track.filename); continue; }
-                    const text = await fileData.text();
-
-                    await renderGPX(text, track.display_name || track.filename, true, track.storage_path, track.color, track.user_id, track.user_email, track.user_name);
-                }
-
-                if (allBounds.length > 0) {
-                    const combined = allBounds.reduce((acc, b) => acc.extend(b), L.latLngBounds(allBounds[0]));
-                    map.fitBounds(combined, { padding: [30, 30] });
-                }
+        if (isMobile) {
+            for (const track of tracks) {
+                renderCardFromMetadata(track);
             }
+        } else {
+            for (const track of tracks) {
+                await loadSingleTrack(track);
+            }
+            if (allBounds.length > 0) {
+                const combined = allBounds.reduce((acc, b) => acc.extend(b), L.latLngBounds(allBounds[0]));
+                map.fitBounds(combined, { padding: [30, 30] });
+            }
+        }
+    } catch (err) {
+        console.error('Error cargando desde Supabase:', err);
+    }
+}
 
-        } catch (err) {
-            console.error('Error cargando desde Supabase:', err);
+async function loadSingleTrack(track) {
+    const cached = await GPX_CACHE.get(track.storage_path);
+
+    if (cached) {
+        const metaChanged =
+            cached.displayName !== (track.display_name || null) ||
+            cached.color       !== (track.color        || null);
+        if (metaChanged) {
+            await GPX_CACHE.updateMeta(track.storage_path, {
+                displayName: track.display_name || null,
+                color:       track.color        || null,
+            });
         }
     }
+
+    let gpxText;
+
+    if (cached) {
+        gpxText = cached.gpxText;
+        console.log('[GPX Cache] HIT:', track.filename);
+    } else {
+        console.log('[GPX Cache] MISS, descargando:', track.filename);
+        const { data: fileData, error: dlError } = await db.storage
+            .from(BUCKET)
+            .download(track.storage_path);
+
+        if (dlError) { console.warn('[GPX Cache] Error descargando', track.filename); return; }
+        gpxText = await fileData.text();
+
+        await GPX_CACHE.put(track.storage_path, gpxText, {
+            displayName: track.display_name || null,
+            color:       track.color        || null,
+        });
+    }
+
+    await renderGPX(
+        gpxText,
+        track.display_name || track.filename,
+        true,
+        track.storage_path,
+        track.color,
+        track.user_id,
+        track.user_email,
+        track.user_name
+    );
+}
 
     // ── Detección de dispositivo ─────────────────────────────────
 
@@ -642,11 +677,21 @@ document.getElementById('gpx-input').addEventListener('change', function(e) {
         // Al hacer click carga el GPX bajo demanda
         card.addEventListener('click', async () => {
             if (!entry.layer) {
-                const { data: fileData, error } = await db.storage
-                    .from(BUCKET)
-                    .download(track.storage_path);
-                if (error) return;
-                const text = await fileData.text();
+                let text;
+const cached = await GPX_CACHE.get(track.storage_path);
+if (cached) {
+    text = cached.gpxText;
+} else {
+    const { data: fileData, error } = await db.storage
+        .from(BUCKET)
+        .download(track.storage_path);
+    if (error) return;
+    text = await fileData.text();
+    await GPX_CACHE.put(track.storage_path, text, {
+        displayName: track.display_name || null,
+        color: track.color || null,
+    });
+}
                 await renderGPX(text, filename, true, track.storage_path, track.color, track.user_id, track.user_email, track.user_name);
                 // Reemplazar entry con el nuevo que tiene layer
                 const newEntry = trackCards[trackCards.length - 1];
